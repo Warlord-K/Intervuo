@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+/* main {
+    text-align: center;
+}
+
+form label:not(:first-child) {
+    margin-left: 10px;
+}
+
+input {
+    height: 20px;
+    margin-left: 10px;
+    font-size: 1em;
+}
+
+button {
+    margin-top: 40px;
+    margin-left: 10px;
+    font-size: 1em;
+    background-color: white;
+    color: black;
+    padding: 5px;
+    border: 2px solid green;
+    cursor: pointer;
+}
+
+button:disabled {
+    background-color: lightgray;
+    border-color: black;
+    cursor: default;
+}
+
+.status_box {
+    border-bottom: 6px solid;
+    background-color: #ddffff;
+    border-color: #2196f3;
+    width: 60%;
+    margin: 0 auto;
+    margin-bottom: 40px;
+    padding: 20px;
+}
+
+.status_box__info {
+    margin-bottom: 15px;
+    text-align: left;
+}
+
+.bold {
+    font-weight: bold;
+} */
