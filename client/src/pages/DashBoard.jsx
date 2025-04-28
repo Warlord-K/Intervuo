@@ -1,223 +1,170 @@
 import React, { useState, useEffect } from "react";
-import { auth, db } from "../config/firebaseConfig"; // Correctly import auth and db
-import { useNavigate, Link } from "react-router-dom"; // Added Link
-import { onAuthStateChanged } from "firebase/auth"; // Keep if needed, though useAuthState is often preferred
+import { auth, db } from "../config/firebaseConfig"; 
+import { useNavigate, Link } from "react-router-dom"; 
+import { onAuthStateChanged } from "firebase/auth"; 
 import { collection, addDoc, serverTimestamp, updateDoc, doc, query, where, getDocs, orderBy } from "firebase/firestore";
-import { Briefcase, Clock, Loader2 } from 'lucide-react'; // Use lucide-react icons
-import { toast } from 'react-toastify'; // Use toast for notifications
+import { Briefcase, Clock, Loader2 } from 'lucide-react'; 
+import { toast } from 'react-toastify'; 
 
-// Helper to get Firebase ID token
 const getIdToken = async () => {
   const currentUser = auth.currentUser;
   if (!currentUser) {
     console.error("User not authenticated.");
     throw new Error("User not authenticated.");
   }
-  return await currentUser.getIdToken(true); // Force refresh if needed
+  return await currentUser.getIdToken(true); 
 };
 
 
 function Dashboard() {
-    const [usr, setUsr] = useState(null); // Store user object
-    const [loading, setLoading] = useState(false); // Loading state for form submission
-    const [err, setErr] = useState(null); // Error message state
-    const [ok, setOk] = useState(false); // Success message state
-    // Form data state (matches old structure)
+    const [usr, setUsr] = useState(null); 
+    const [loading, setLoading] = useState(false); 
+    const [err, setErr] = useState(null);
+    const [ok, setOk] = useState(false);
     const [fData, setFData] = useState({
         co: "",
         role: "",
-        lvl: "", // Default to empty, let select handle it
-        iType: "behavioral", // Default to behavioral
+        lvl: "", 
+        iType: "behavioral", 
         lang: "",
-        notifyPref: "email", // Keep if needed, though not used in current flow
+        notifyPref: "email", 
     });
-    const [interviews, setInterviews] = useState([]); // State for interview history
-    const [histLoading, setHistLoading] = useState(false); // Loading state for history
+    const [interviews, setInterviews] = useState([]); 
+    const [histLoading, setHistLoading] = useState(false); 
     const nav = useNavigate();
 
-    // Effect to check auth state and fetch history
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, (u) => {
             if (u) {
                 setUsr(u);
-                // Fetch history using the correct logic for the current Firestore structure
                 fetchHistory(u.uid);
             } else {
-                // If user logs out, redirect to sign-in
-                nav("/signin"); // Redirect to signin if not logged in
+                nav("/signin"); 
             }
         });
-        // Cleanup subscription on unmount
         return () => unsub();
-    }, [nav]); // Dependency on navigate
-
-    // Fetch interview history from the correct subcollection
+    }, [nav]); 
     const fetchHistory = async (uid) => {
         if (!uid) return;
         setHistLoading(true);
-        setErr(null); // Clear previous errors
+        setErr(null); 
         try {
-            // Query the user-specific subcollection 'interviewResults'
-            // This assumes results are stored here after analysis
             const resultsColRef = collection(db, 'users', uid, 'interviewResults');
-            // Order by creation date, newest first
             const q = query(resultsColRef, orderBy("createdAt", "desc"));
             const querySnapshot = await getDocs(q);
 
             const iList = querySnapshot.docs.map(d => ({
-                id: d.id, // Firestore document ID of the result
-                ...d.data() // Data stored in the result document
+                id: d.id, 
+                ...d.data()
             }));
 
-            // Additionally, fetch initiated interviews if needed (or combine logic)
-            // For simplicity, we'll primarily rely on 'interviewResults' for history now.
-            // If you also stored initial setup in 'interviews' subcollection, you might query that too.
-
-            setInterviews(iList); // Update state with fetched results
+            setInterviews(iList); 
         } catch (e) {
             console.error("Error fetching interview history:", e);
             setErr("Failed to load interview history.");
-            toast.error("Failed to load interview history."); // Notify user
+            toast.error("Failed to load interview history."); 
         } finally {
             setHistLoading(false);
         }
     };
-
-    // Handle form input changes
     const handleChange = (e) => {
         setFData({ ...fData, [e.target.name]: e.target.value });
     };
-
-    // Handle form submission to start an interview
     const handleSubmit = async (e) => {
-        e.preventDefault(); // Prevent default form submission
-        // Basic validation
+        e.preventDefault(); 
         if (!fData.co || !fData.role || !fData.lvl || !fData.iType) {
              toast.error('Please fill in Company, Role, Level, and Interview Type.');
              return;
         }
 
-        setLoading(true); // Set loading state
-        setErr(null); // Clear previous errors
-        setOk(false); // Reset success state
-        // Removed docRefId tracking as we navigate immediately if successful
+        setLoading(true);
+        setErr(null); 
+        setOk(false); 
 
         try {
-            if (!usr) throw new Error("User not authenticated"); // Check if user is available
-
-            // *** Get the Firebase Auth Token ***
+            if (!usr) throw new Error("User not authenticated"); 
             const token = await getIdToken();
-
-            // Prepare data for the backend (matches backend expectation)
             const interviewDetailsForBackend = {
                 co: fData.co,
                 role: fData.role,
                 lvl: fData.lvl,
                 iType: fData.iType,
-                lang: fData.lang || null, // Send null if empty
+                lang: fData.lang || null, 
             };
-
-            // Call backend to create Ultravox call
             const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5210'; // Use correct backend URL/port
             const response = await fetch(`${backendUrl}/api/start-interview`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    // *** Include the Authorization Header ***
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify(interviewDetailsForBackend) // Send data
+                body: JSON.stringify(interviewDetailsForBackend) 
             });
-
-            // Check response status
             if (!response.ok) {
-                 // Handle specific auth errors from backend
                  if (response.status === 401 || response.status === 403) {
                      const errorData = await response.json();
                      const errorMsg = `Authentication error: ${errorData.message || errorData.error}. Please log in again.`;
                      setErr(errorMsg);
                      toast.error(errorMsg);
-                     // Optional: Redirect to login
-                     // nav('/signin');
                      throw new Error(errorMsg);
                  }
-                 // Handle other errors (like missing API key in profile)
                  const errorData = await response.json();
                  const errorMsg = `Error: ${errorData.error || errorData.message}`;
                  setErr(errorMsg);
                  toast.error(errorMsg);
                  throw new Error(errorMsg);
             }
-
-            // Parse successful response
             const data = await response.json();
-
-            // Check if joinUrl is received
             if (data.joinUrl) {
-                setOk(true); // Set success state
-                toast.success("Interview session created successfully!"); // Notify user
-
-                // --- Optional: Save initial setup to Firestore ---
-                // This helps track initiated interviews even if not completed.
-                // We use a placeholder ID 'temp' for navigation if saving fails.
-                let interviewDocId = 'temp-' + Date.now(); // Placeholder ID
+                setOk(true);
+                toast.success("Interview session created successfully!");
+                let interviewDocId = 'temp-' + Date.now(); 
                 try {
-                   const interviewsColRef = collection(db, 'users', usr.uid, 'interviews'); // Collection for setup info
+                   const interviewsColRef = collection(db, 'users', usr.uid, 'interviews'); 
                    const docRef = await addDoc(interviewsColRef, {
-                      company: fData.co, // Use full names consistent with display
+                      company: fData.co, 
                       role: fData.role,
                       level: fData.lvl,
                       interviewType: fData.iType,
                       preferredLanguage: fData.lang || null,
                       ultravoxCallId: data.callId,
-                      status: 'initiated', // Mark as initiated
+                      status: 'initiated', 
                       createdAt: serverTimestamp()
                    });
-                   interviewDocId = docRef.id; // Get the actual ID
+                   interviewDocId = docRef.id; 
                    console.log("Interview setup saved with ID:", interviewDocId);
                 } catch (dbError) {
                    console.error("Error saving interview setup to Firestore:", dbError);
                    toast.warn("Could not save interview setup details.");
-                   // Use the placeholder ID for navigation if saving fails
                 }
-                // --- End Optional Firestore Save ---
-
-                // Navigate to the interview page with joinUrl and pass details/ID in state
-                // Use the actual or placeholder Firestore doc ID as the interviewId in the URL
                 nav(`/interviewPage/${interviewDocId}?joinUrl=${encodeURIComponent(data.joinUrl)}`, {
                   state: {
-                     // Pass details needed by InterviewPage (matching its ref structure)
                      interviewDetails: {
-                         company: fData.co, // Use full names
+                         company: fData.co,
                          role: fData.role,
                          level: fData.lvl,
-                         interviewType: fData.iType // Pass type if needed
+                         interviewType: fData.iType
                      },
-                     interviewId: interviewDocId // Pass the Firestore ID (actual or placeholder)
+                     interviewId: interviewDocId
                   }
                 });
-
-                // Reset form after successful navigation setup
                 setFData({ co: "", role: "", lvl: "", iType: "behavioral", lang: "", notifyPref: "email" });
-                // Optionally refresh history immediately, though it might not show the new one yet
-                // fetchHistory(usr.uid);
 
             } else {
-                throw new Error('Join URL not received from server.'); // Handle case where joinUrl is missing
+                throw new Error('Join URL not received from server.'); 
             }
 
         } catch (e) {
             console.error("Error in handleSubmit:", e);
-            // Error state (err) and toast are likely set within the try block's error handling
-            if (!err) { // Set a generic error if none was set before
+            if (!err) {
                const errorMsg = `Failed to start interview: ${e.message}`;
                setErr(errorMsg);
                toast.error(errorMsg);
             }
-            // Removed Firestore status update to 'failed' here for simplicity,
-            // backend errors are handled above.
         } finally {
             setLoading(false); // Ensure loading is turned off
+// 
+
         }
     };
 
@@ -339,7 +286,6 @@ function Dashboard() {
                                     >
                                         <option value="behavioral">Behavioral & Situational</option>
                                         <option value="technical">Technical (General)</option>
-                                        <option value="coding">Coding Challenge</option>
                                         <option value="system-design">System Design</option>
                                         <option value="case_study">Case Study & Problem Solving</option>
                                         <option value="role_specific">Knowledge & Skills</option>

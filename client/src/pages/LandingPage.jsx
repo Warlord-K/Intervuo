@@ -42,8 +42,6 @@ function LandingPage() {
           </div>
         </div>
       </section>
-
-      {/* Features Section */}
       <section className="bg-white py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-3xl font-bold text-center mb-12">Why Choose Intervuo?</h2>
@@ -66,8 +64,6 @@ function LandingPage() {
           </div>
         </div>
       </section>
-
-      {/* How It Works Section */}
       <section className="py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-3xl font-bold text-center mb-12">How It Works</h2>
@@ -79,8 +75,6 @@ function LandingPage() {
           </div>
         </div>
       </section>
-
-      {/* CTA Section */}
       <section className="bg-purple-700 py-20">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl font-bold text-white mb-6">Ready to Ace Your Next Interview?</h2>

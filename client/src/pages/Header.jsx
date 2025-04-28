@@ -20,7 +20,7 @@ const Header = () => {
     const handleLogout = async () => {
         try {
             await signOut(auth);
-            nav('/signin'); // Redirect to signin page after logout
+            nav('/signin');         
         } catch (err) {
             console.error("Logout error:", err);
         }

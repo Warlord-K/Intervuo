@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import fetch from 'node-fetch';
 import { Groq } from 'groq-sdk';
 import admin from 'firebase-admin';
-import { createRequire } from 'module'; // Import createRequire
+import { createRequire } from 'module';
 
 dotenv.config(); 
 const require = createRequire(import.meta.url); 
@@ -38,12 +38,10 @@ const db = admin.firestore();
 const app = express();
 const PORT = process.env.PORT || 5210;
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- Authentication Middleware ---
 const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers.authorization;
     const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
@@ -67,7 +65,6 @@ const authenticateToken = async (req, res, next) => {
     }
 };
 
-// --- Helper function to get user API keys from Firestore ---
 const getUserApiKeys = async (uid) => {
     if (!uid) {
         throw new Error('Authentication required.');
@@ -76,12 +73,10 @@ const getUserApiKeys = async (uid) => {
     let docSnap;
     try {
         console.log(`Attempting to fetch Firestore document: users/${uid}`);
-        docSnap = await userDocRef.get(); // Attempt to get the document
+        docSnap = await userDocRef.get();
         console.log(`Successfully fetched Firestore document snapshot for users/${uid}. Exists: ${docSnap.exists}`);
     } catch (error) {
-        // Log the specific error from Firestore call
         console.error(`Firestore get() error for users/${uid}:`, error);
-        // Re-throw the original error to be caught by the calling route handler
         throw error;
     }
 
@@ -96,46 +91,101 @@ const getUserApiKeys = async (uid) => {
     };
 };
 
-// --- Original Interview Prompt Creation Logic ---
 const createPrompt = (iData) => {
     const { co, role, lvl, iType, lang } = iData;
-    let p = `You are an AI interviewer representing ${co} for a ${lvl} ${role} position. `;
-    switch (iType) { /* ... prompt logic ... */
-        case "technical":
-            p += `This is a technical interview. `;
-            if (lang) p += `Preferred language: ${lang}. `;
-            p += "Ask relevant technical questions focusing on algorithms, data structures, and problem-solving.";
-            break;
+    const technicalRoles = [
+        'software engineer', 'data scientist', 'machine learning engineer',
+        'backend developer', 'frontend developer', 'full stack developer',
+        'devops engineer', 'sre', 'cloud engineer', 'data engineer',
+        'research scientist', 'quantitative analyst', 'systems engineer', 
+        'network engineer', 'security engineer', 'database administrator',
+        'it support', 'technical support', 'qa engineer', 'test engineer',
+        'business analyst', 'ux designer', 'ui designer',
+        'game developer', 'mobile developer', 'web developer', 'data analyst',
+        'data architect', 'data visualization expert', 'data modeler',
+        'data governance specialist', 'data quality analyst', 'data operations engineer',
+        'data privacy officer', 'data compliance officer', 'data steward',
+        'data custodian', 'data protection officer', 'data ethics officer',
+        'data scientist intern', 'data analyst intern', 'software engineer intern',
+        'machine learning intern', 'data engineering intern', 'cloud engineering intern',
+    ];
+    const isTechnicalRole = technicalRoles.includes(role.toLowerCase().trim());
+    let p = `You are an AI interviewer representing ${co} for a ${lvl} ${role} position. Your goal is to assess the candidate based on the interview type.`;
+    switch (iType) {
         case "behavioral":
-            p += "This is a behavioral interview. Ask questions to assess teamwork, problem-solving, leadership, and communication skills using the STAR method format where applicable.";
+            p += ` This is a behavioral and situational interview. Ask questions to assess teamwork, problem-solving, leadership, and communication skills. Encourage the candidate to use the STAR method (Situation, Task, Action, Result) where applicable.`;
             break;
+
+        case "case_study":
+             p += ` This is a case study and problem-solving interview. Present a business problem, market scenario, or analytical challenge relevant to the ${role} role. Focus on the candidate's analytical approach, structured thinking, and proposed solutions.`;
+             break;
+
+        case "role_specific":
+             p += ` This interview focuses on role-specific knowledge and skills for a ${role}. Ask questions directly related to the core competencies, tools, and responsibilities of this position.`;
+             if (isTechnicalRole) {
+                 p += ` Since this is a technical role, include questions about relevant technologies, concepts (like algorithms or data structures if applicable to ${role}), or system understanding.`;
+                 if (lang) p += ` If discussing code concepts, relate them to ${lang}.`;
+             } else {
+                 p += ` Avoid deep computer science theory unless directly relevant to the ${role} function.`;
+             }
+             break;
+
+        case "resume_experience":
+             p += ` This interview is a deep dive into the candidate's resume and past experience. Ask specific questions about their previous roles, projects, accomplishments, and learnings mentioned in their resume.`;
+             break;
+
+        case "presentation":
+             p += ` This interview simulates a presentation scenario. Ask the candidate to present on a topic relevant to the ${role} role, explain a complex concept clearly, or simulate a stakeholder update. Focus on their communication clarity, structure, and delivery.`;
+             break;
+
+        case "cultural_fit":
+             p += ` This interview assesses cultural fit and values alignment. Ask questions about their work style, collaboration preferences, approach to feedback, and alignment with typical company values (like innovation, teamwork, customer focus - adapt as needed).`;
+             break;
+
+        case "technical": 
+            p += ` This is a technical interview.`;
+            if (isTechnicalRole) {
+                p += ` Focus on relevant technical concepts, algorithms, data structures, and problem-solving approaches applicable to a ${role}.`;
+                if (lang) p += ` If discussing code concepts, relate them to ${lang}.`;
+            } else {
+                p += ` Focus on technical problem-solving approaches and concepts relevant to the ${role} role, but avoid deep computer science theory like complex algorithms unless appropriate for the specific non-developer technical role.`;
+            }
+            break;
+
         case "system-design":
-            p += "This is a system design interview. Present a high-level design challenge related to scalable systems.";
+            p += ` This is a system design interview.`;
+            if (isTechnicalRole) {
+                 p += ` Present a high-level design challenge related to scalable systems relevant to the ${role} role. Focus on requirements gathering, component design, trade-offs, and scalability.`;
+            } else {
+                 p += ` Focus on process design or high-level workflow design relevant to the ${role} role. Avoid deep technical system architecture.`;
+            }
             break;
-        case "coding":
-            p += `This is a coding interview. `;
-            if (lang) p += `Preferred language: ${lang}. `;
-            p += "Present a moderately difficult coding problem suitable for the role and level. Evaluate the candidate's approach, efficiency, and code clarity.";
-            break;
-        default:
-            p += "Conduct a general interview for the specified role and company.";
+
+        default: 
+            p += ` Conduct a general interview for the specified role and company, touching upon relevant experiences and skills. Ask a mix of behavioral and role-related questions.`;
+             if (isTechnicalRole) {
+                 p += ` Include some technical discussion appropriate for the ${role} role.`;
+             }
     }
-    p += "\n\nInterview Process:\n1. Brief introduction and role overview.\n2. Ask relevant questions based on the interview type.\n3. Listen actively to the candidate's responses, asking clarifying follow-up questions if needed.\n4. Conclude the interview gracefully.\n5. Provide constructive feedback (this part is for internal use/later analysis, do not say this to the candidate during the interview flow).";
+
+    p += `\n\n--- Interviewer Guidelines ---
+1.  **Introduction:** Start with a *very brief* introduction: "Hello, I'm your AI interviewer for the ${lvl} ${role} role at ${co}. Today we'll focus on a ${iType} style interview. Are you ready?"
+2.  **Questioning:** Ask relevant questions one by one based on the interview type defined above. Keep your questions concise.
+3.  **Listening:** Listen actively to the candidate's entire response without interrupting.
+4.  **No Feedback:** Do **NOT** provide feedback, evaluation, or commentary on the candidate's answers during the interview. Simply proceed to the next question or a relevant follow-up.
+5.  **Focus on Candidate:** Your primary role is to ask questions and listen. Minimize your own speaking time to allow the candidate maximum time to respond. Ask only clarifying follow-up questions if an answer is very unclear or incomplete.
+6.  **Conclusion:** When appropriate (e.g., after several questions or nearing time limit), conclude *briefly*: "Okay, that concludes our mock interview session. Thank you for your time." Do not add further pleasantries or feedback.`;
+
     return p;
 };
 
-
-// --- API Routes ---
-
-// Route to start interview (requires Auth, uses user's Ultravox key)
 app.post('/api/start-interview', authenticateToken, async (req, res) => {
     console.log('start-interview called for UID:', req.user.uid);
     const uid = req.user.uid;
 
     let userUltravoxKey;
     try {
-        const keys = await getUserApiKeys(uid); // Fetch keys first
-        userUltravoxKey = keys.ultravoxApiKey;
+        const keys = await getUserApiKeys(uid);         userUltravoxKey = keys.ultravoxApiKey;
         if (!userUltravoxKey) {
             return res.status(400).json({ error: 'Ultravox API key not found in your profile. Please add it.' });
         }
@@ -156,7 +206,7 @@ app.post('/api/start-interview', authenticateToken, async (req, res) => {
     }
 
     const sysPrompt = createPrompt(iData);
-    const callCfg = { /* ... call config ... */
+    const callCfg = { 
         systemPrompt: sysPrompt,
         temperature: 0.7,
         model: "fixie-ai/ultravox",
@@ -211,15 +261,13 @@ app.post('/api/start-interview', authenticateToken, async (req, res) => {
     }
 });
 
-
-// Route to analyze transcript (requires Auth, uses user's Groq key)
 app.post('/api/analyze-transcript', authenticateToken, async (req, res) => {
     console.log('analyze-transcript called for UID:', req.user.uid);
     const uid = req.user.uid;
 
     let userGroqKey;
     try {
-        const keys = await getUserApiKeys(uid); // Fetch keys first
+        const keys = await getUserApiKeys(uid);
         userGroqKey = keys.groqApiKey;
         if (!userGroqKey) {
             return res.status(400).json({ error: 'Groq API key not found in your profile. Please add it.' });
@@ -237,10 +285,8 @@ app.post('/api/analyze-transcript', authenticateToken, async (req, res) => {
 
     const groq = new Groq({ apiKey: userGroqKey });
 
-    // Destructure expected data from request body
-    const { transcript, interviewDetails, interviewId } = req.body; // transcript is the array of transcript objects
+    const { transcript, interviewDetails, interviewId } = req.body;
 
-    // Validate required data
     if (!transcript || !Array.isArray(transcript) || transcript.length === 0) {
         return res.status(400).json({ error: 'Valid transcript data is required.' });
     }
@@ -294,9 +340,9 @@ app.post('/api/analyze-transcript', authenticateToken, async (req, res) => {
           }
         }
         Ensure the output is valid JSON. Do not include any text outside the JSON object.
-    `; // Keep original analysis prompt
+    `;
 
-    let analysisResult; // Declare analysisResult outside the try block
+    let analysisResult;
 
     try {
         console.log(`Sending request to Groq for UID ${uid}...`);
@@ -315,7 +361,6 @@ app.post('/api/analyze-transcript', authenticateToken, async (req, res) => {
         const analysisResultString = chatCompletion.choices[0]?.message?.content;
         if (!analysisResultString) throw new Error("Groq API returned an empty response.");
 
-        // Keep original robust JSON parsing
         try {
              analysisResult = JSON.parse(analysisResultString);
         } catch (parseError) {
@@ -334,29 +379,21 @@ app.post('/api/analyze-transcript', authenticateToken, async (req, res) => {
              }
         }
 
-        // *** ADDED: Save analysis result AND TRANSCRIPT to Firestore ***
         try {
             const resultDocRef = db.collection('users').doc(uid).collection('interviewResults').doc(interviewId);
             await resultDocRef.set({
-                ...analysisResult, // Save summary, analysis, scores
-                // Add context from interviewDetails (use original field names if needed by frontend history)
+                ...analysisResult, 
                 company: interviewDetails?.company || null,
                 role: interviewDetails?.role || null,
                 level: interviewDetails?.level || null,
                 interviewType: interviewDetails?.interviewType || null,
-                // *** Store the original transcript array ***
-                transcript: transcript, // Save the array received from the frontend
-                // Add timestamp
-                createdAt: admin.firestore.FieldValue.serverTimestamp() // Use server timestamp
+                transcript: transcript, 
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
             });
             console.log(`Successfully saved analysis result and transcript to Firestore for interview ID: ${interviewId}`);
         } catch (dbError) {
             console.error(`Error saving analysis result/transcript to Firestore for interview ID ${interviewId}:`, dbError);
-            // Don't fail the whole request, but log the error. The user still gets the analysis back.
         }
-        // *** END: Save analysis result ***
-
-        // Send the analysis result back to the frontend
         res.json(analysisResult);
 
     } catch (error) {
@@ -368,8 +405,6 @@ app.post('/api/analyze-transcript', authenticateToken, async (req, res) => {
     }
 });
 
-
-// Health check endpoint
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'OK', message: 'Intervuo backend is running' });
 });

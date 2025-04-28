@@ -15,8 +15,7 @@ const ProfilePage = () => {
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
-        // Fetch API keys from Firestore
-        const userDocRef = doc(db, 'users', currentUser.uid);
+                const userDocRef = doc(db, 'users', currentUser.uid);
         try {
           const docSnap = await getDoc(userDocRef);
           if (docSnap.exists()) {
@@ -45,13 +44,10 @@ const ProfilePage = () => {
     setIsSaving(true);
     const userDocRef = doc(db, 'users', user.uid);
     try {
-      // Use setDoc with merge: true to update or create the document
-      await setDoc(userDocRef, {
+            await setDoc(userDocRef, {
         ultravoxApiKey: ultravoxKey,
         groqApiKey: groqKey,
-        email: user.email // Optionally store email or other non-sensitive info
-      }, { merge: true }); // merge: true ensures we don't overwrite other fields
-
+        email: user.email       }, { merge: true }); 
       toast.success('API Keys saved successfully!');
     } catch (error) {
       console.error("Error saving API keys:", error);
@@ -93,8 +89,7 @@ const ProfilePage = () => {
               Ultravox API Key
             </label>
             <input
-              type="password" // Use password type to obscure the key
-              id="ultravoxKey"
+              type="password"               id="ultravoxKey"
               value={ultravoxKey}
               onChange={(e) => setUltravoxKey(e.target.value)}
               placeholder="Enter your Ultravox API Key"
@@ -106,8 +101,7 @@ const ProfilePage = () => {
               Groq API Key
             </label>
             <input
-              type="password" // Use password type to obscure the key
-              id="groqKey"
+              type="password"               id="groqKey"
               value={groqKey}
               onChange={(e) => setGroqKey(e.target.value)}
               placeholder="Enter your Groq API Key"

@@ -11,12 +11,9 @@ const InterviewResultsPage = () => {
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  // Attempt to get initial data from navigation state (if navigated from InterviewPage)
   const initialData = location.state;
 
   useEffect(() => {
-    // Function to fetch results from Firestore
     const fetchResultsFromFirestore = async (userId) => {
       setLoading(true);
       setError(null);
@@ -29,7 +26,6 @@ const InterviewResultsPage = () => {
       }
 
       try {
-        // Construct the correct path using the userId and interviewId
         const resultDocRef = doc(db, 'users', userId, 'interviewResults', interviewId);
         const docSnap = await getDoc(resultDocRef);
 
@@ -47,18 +43,13 @@ const InterviewResultsPage = () => {
         setLoading(false);
       }
     };
-
-    // Use onAuthStateChanged to ensure user is loaded before deciding how to get data
     const unsubscribe = auth.onAuthStateChanged(user => {
       if (user) {
         console.log("Auth state confirmed (User ID):", user.uid);
-
-        // Check if valid data was passed via state (from InterviewPage)
         if (initialData && initialData.analysis && !initialData.error) {
           console.log("Using initial data from location state:", initialData);
           setResults({
               ...initialData.analysis, // Contains summary, analysis, scores
-              // Assuming transcript/details might be passed too
               transcript: initialData.transcript,
               company: initialData.interviewDetails?.company,
               role: initialData.interviewDetails?.role,
@@ -67,11 +58,9 @@ const InterviewResultsPage = () => {
           });
           setLoading(false);
         }
-        // Check if an error was passed via state
         else if (initialData && initialData.error) {
             console.log("Using error from location state:", initialData.error);
             setError(initialData.error);
-            // Optionally set partial results if transcript/details were passed
             setResults({
                 transcript: initialData.transcript,
                 company: initialData.interviewDetails?.company,
@@ -81,27 +70,19 @@ const InterviewResultsPage = () => {
             });
             setLoading(false);
         }
-        // Otherwise (no valid state or navigating directly), fetch from Firestore
         else {
           fetchResultsFromFirestore(user.uid);
         }
       } else {
         console.log("Auth state changed to logged out while on results page.");
-        // Should be handled by routing, but set error/loading state appropriately
         setError("User is not logged in.");
         setLoading(false);
         setResults(null); // Clear any previous results
       }
     });
-
-    // Cleanup the listener on component unmount
     return () => unsubscribe();
 
   }, [interviewId, initialData]); // Rerun effect if interviewId or initialData changes
-
-  // --- Render Logic (Loading, Error, Success) ---
-
-  // Loading State
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)] bg-gray-100"> {/* Adjusted height */}
@@ -112,9 +93,6 @@ const InterviewResultsPage = () => {
       </div>
     );
   }
-
-  // Error State or No Results after loading
-  // Show error if error state is set OR if loading is done and results are still null
   if (error || (!loading && !results)) {
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)] bg-gray-100 px-4"> {/* Adjusted height and added padding */}
@@ -132,12 +110,8 @@ const InterviewResultsPage = () => {
       </div>
     );
   }
-
-  // --- Success State - Display Results ---
-  // Helper function to render score stars
   const renderStars = (score) => {
     if (score === null || score === undefined || score === 'N/A') return <span className="text-gray-400 italic">N/A</span>;
-    // Ensure score is a number before rounding
     const numericScore = Number(score);
     if (isNaN(numericScore)) return <span className="text-gray-400 italic">Invalid</span>;
 
