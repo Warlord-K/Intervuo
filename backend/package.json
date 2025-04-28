@@ -1,21 +1,61 @@
 {
-  "name": "backend",
+  "name": "intervuo-backend",
   "version": "1.0.0",
+  "description": "Backend for Intervuo using Ultravox and Groq with BYOK",
   "main": "index.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
+  "keywords": [
+    "interview",
+    "ai",
+    "ultravox",
+    "groq",
+    "byok"
+  ],
   "author": "",
   "license": "ISC",
-  "description": "",
-  "type": "module",
   "dependencies": {
-    "backend": "file:",
     "cors": "^2.8.5",
-    "dotenv": "^16.5.0",
-    "express": "^4.21.2",
-    "groq-sdk": "^0.20.0",
-    "node-fetch": "^2.7.0",
-    "razorpay": "^2.9.6"
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "firebase-admin": "^12.1.1",
+    "groq-sdk": "^0.3.3",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}{
+  "name": "intervuo-backend",
+  "version": "1.0.0",
+  "description": "Backend for Intervuo using Ultravox and Groq with BYOK",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "keywords": [
+    "interview",
+    "ai",
+    "ultravox",
+    "groq",
+    "byok"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "firebase-admin": "^12.1.1",
+    "groq-sdk": "^0.3.3",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
   }
 }

@@ -1,8 +1,8 @@
-# CrackItAI: AI-Powered Mock Interview Platform
+# Intervuo: AI-Powered Mock Interview Platform
 
 ## Project Overview
 
-CrackItAI is a web application designed to assist users in preparing for technical and behavioral interviews through simulated sessions with an AI interviewer. This project aims to provide a realistic practice environment, allowing users to refine their responses, manage interview anxiety, and receive feedback implicitly through the interview flow. The platform features user authentication, interview scheduling based on role and company specifics, real-time interaction with an AI agent powered by Ultravox AI, and persistent user profile management.
+Intervuo is a web application designed to assist users in preparing for technical and behavioral interviews through simulated sessions with an AI interviewer. This project aims to provide a realistic practice environment, allowing users to refine their responses, manage interview anxiety, and receive feedback implicitly through the interview flow. The platform features user authentication, interview scheduling based on role and company specifics, real-time interaction with an AI agent powered by Ultravox AI, and persistent user profile management.
 
 The architecture consists of a frontend client built using React and Vite, styled with Tailwind CSS, and a backend server developed with Node.js and Express. Firebase serves as the backbone for user authentication (supporting email/password and Google sign-in) and the Firestore database for storing user profiles and interview metadata.
 
@@ -104,7 +104,7 @@ The backend logic is primarily located in `backend/index.js`, which sets up the 
 
 ## Authors
 
-This project was developed by Group 12 as part of a university curriculum. The contributors to this repository are:
+This project was developed by Group 12 as part of the Service Oreinted Systems course. The contributors to this repository are:
 
 * Yatharth Gupta (210001083)
 * Sujal Mishra (210001069)

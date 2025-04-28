@@ -1,215 +1,285 @@
 import React, { useState, useEffect } from "react";
-import { auth, db } from "../config/firebaseConfig";
-import { useNavigate } from "react-router-dom";
-import { onAuthStateChanged } from "firebase/auth";
+import { auth, db } from "../config/firebaseConfig"; // Correctly import auth and db
+import { useNavigate, Link } from "react-router-dom"; // Added Link
+import { onAuthStateChanged } from "firebase/auth"; // Keep if needed, though useAuthState is often preferred
 import { collection, addDoc, serverTimestamp, updateDoc, doc, query, where, getDocs, orderBy } from "firebase/firestore";
-import { Briefcase, Clock } from 'lucide-react';
+import { Briefcase, Clock, Loader2 } from 'lucide-react'; // Use lucide-react icons
+import { toast } from 'react-toastify'; // Use toast for notifications
 
+// Helper to get Firebase ID token
+const getIdToken = async () => {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    console.error("User not authenticated.");
+    throw new Error("User not authenticated.");
+  }
+  return await currentUser.getIdToken(true); // Force refresh if needed
+};
 
 
 function Dashboard() {
-    const [usr, setUsr] = useState(null);
-    const [loading, setLoading] = useState(false);
-    const [err, setErr] = useState(null);
-    const [ok, setOk] = useState(false);
+    const [usr, setUsr] = useState(null); // Store user object
+    const [loading, setLoading] = useState(false); // Loading state for form submission
+    const [err, setErr] = useState(null); // Error message state
+    const [ok, setOk] = useState(false); // Success message state
+    // Form data state (matches old structure)
     const [fData, setFData] = useState({
         co: "",
         role: "",
-        lvl: "",
-        iType: "technical",
+        lvl: "", // Default to empty, let select handle it
+        iType: "behavioral", // Default to behavioral
         lang: "",
-        notifyPref: "email",
+        notifyPref: "email", // Keep if needed, though not used in current flow
     });
-    const [interviews, setInterviews] = useState([]);
-    const [histLoading, setHistLoading] = useState(false);
+    const [interviews, setInterviews] = useState([]); // State for interview history
+    const [histLoading, setHistLoading] = useState(false); // Loading state for history
     const nav = useNavigate();
 
-    // No longer need getApiKey on frontend
-
+    // Effect to check auth state and fetch history
     useEffect(() => {
         const unsub = onAuthStateChanged(auth, (u) => {
             if (u) {
                 setUsr(u);
+                // Fetch history using the correct logic for the current Firestore structure
                 fetchHistory(u.uid);
             } else {
-                nav("/");
+                // If user logs out, redirect to sign-in
+                nav("/signin"); // Redirect to signin if not logged in
             }
         });
+        // Cleanup subscription on unmount
         return () => unsub();
-    }, [nav]);
+    }, [nav]); // Dependency on navigate
 
+    // Fetch interview history from the correct subcollection
     const fetchHistory = async (uid) => {
         if (!uid) return;
         setHistLoading(true);
+        setErr(null); // Clear previous errors
         try {
-            const q = query(
-                collection(db, "interviews"),
-                where("userId", "==", uid),
-                orderBy("createdAt", "desc")
-            );
-            const qSnap = await getDocs(q);
-            const iList = qSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setInterviews(iList);
+            // Query the user-specific subcollection 'interviewResults'
+            // This assumes results are stored here after analysis
+            const resultsColRef = collection(db, 'users', uid, 'interviewResults');
+            // Order by creation date, newest first
+            const q = query(resultsColRef, orderBy("createdAt", "desc"));
+            const querySnapshot = await getDocs(q);
+
+            const iList = querySnapshot.docs.map(d => ({
+                id: d.id, // Firestore document ID of the result
+                ...d.data() // Data stored in the result document
+            }));
+
+            // Additionally, fetch initiated interviews if needed (or combine logic)
+            // For simplicity, we'll primarily rely on 'interviewResults' for history now.
+            // If you also stored initial setup in 'interviews' subcollection, you might query that too.
+
+            setInterviews(iList); // Update state with fetched results
         } catch (e) {
-            console.error("Error fetching history:", e);
+            console.error("Error fetching interview history:", e);
             setErr("Failed to load interview history.");
+            toast.error("Failed to load interview history."); // Notify user
         } finally {
             setHistLoading(false);
         }
     };
 
-
-    const logOut = async () => {
-        try {
-            await auth.signOut();
-            nav("/landingPage");
-        } catch (e) {
-            console.error("Error logging out:", e);
-        }
-    };
-
+    // Handle form input changes
     const handleChange = (e) => {
         setFData({ ...fData, [e.target.name]: e.target.value });
     };
 
-    // Removed createPrompt - now handled by backend
-    // Removed createCall - now handled by backend
-
+    // Handle form submission to start an interview
     const handleSubmit = async (e) => {
-        e.preventDefault();
-        setLoading(true);
-        setErr(null);
-        setOk(false);
-        let docRefId = null; // Keep track of Firestore doc ID
+        e.preventDefault(); // Prevent default form submission
+        // Basic validation
+        if (!fData.co || !fData.role || !fData.lvl || !fData.iType) {
+             toast.error('Please fill in Company, Role, Level, and Interview Type.');
+             return;
+        }
+
+        setLoading(true); // Set loading state
+        setErr(null); // Clear previous errors
+        setOk(false); // Reset success state
+        // Removed docRefId tracking as we navigate immediately if successful
 
         try {
-            if (!usr) throw new Error("User not auth");
+            if (!usr) throw new Error("User not authenticated"); // Check if user is available
 
-            // 1. Create initial Firestore document
-            const iDataForFirestore = {
-                company: fData.co,
+            // *** Get the Firebase Auth Token ***
+            const token = await getIdToken();
+
+            // Prepare data for the backend (matches backend expectation)
+            const interviewDetailsForBackend = {
+                co: fData.co,
                 role: fData.role,
-                level: fData.lvl,
-                interviewType: fData.iType,
-                preferredLanguage: fData.lang,
-                notificationPreference: fData.notifyPref,
-                userId: usr.uid,
-                userEmail: usr.email,
-                userName: usr.displayName || "Anon",
-                status: "scheduling", // Initial status
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
+                lvl: fData.lvl,
+                iType: fData.iType,
+                lang: fData.lang || null, // Send null if empty
             };
 
-            const docRef = await addDoc(collection(db, "interviews"), iDataForFirestore);
-            docRefId = docRef.id; // Store the ID
-
-            // 2. Call backend to create Ultravox call
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5210'; // Adjust as needed
-            const backendRes = await fetch(`${backendUrl}/api/start-interview`, {
+            // Call backend to create Ultravox call
+            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5210'; // Use correct backend URL/port
+            const response = await fetch(`${backendUrl}/api/start-interview`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ // Send only necessary data for call creation
-                    co: fData.co,
-                    role: fData.role,
-                    lvl: fData.lvl,
-                    iType: fData.iType,
-                    lang: fData.lang,
-                })
+                headers: {
+                    'Content-Type': 'application/json',
+                    // *** Include the Authorization Header ***
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(interviewDetailsForBackend) // Send data
             });
 
-            if (!backendRes.ok) {
-                const errData = await backendRes.json();
-                throw new Error(errData.error || `Backend error: ${backendRes.status}`);
+            // Check response status
+            if (!response.ok) {
+                 // Handle specific auth errors from backend
+                 if (response.status === 401 || response.status === 403) {
+                     const errorData = await response.json();
+                     const errorMsg = `Authentication error: ${errorData.message || errorData.error}. Please log in again.`;
+                     setErr(errorMsg);
+                     toast.error(errorMsg);
+                     // Optional: Redirect to login
+                     // nav('/signin');
+                     throw new Error(errorMsg);
+                 }
+                 // Handle other errors (like missing API key in profile)
+                 const errorData = await response.json();
+                 const errorMsg = `Error: ${errorData.error || errorData.message}`;
+                 setErr(errorMsg);
+                 toast.error(errorMsg);
+                 throw new Error(errorMsg);
             }
 
-            const uvRes = await backendRes.json();
+            // Parse successful response
+            const data = await response.json();
 
-            if (!uvRes.callId || !uvRes.joinUrl) {
-                throw new Error("Backend did not return call ID or join URL");
+            // Check if joinUrl is received
+            if (data.joinUrl) {
+                setOk(true); // Set success state
+                toast.success("Interview session created successfully!"); // Notify user
+
+                // --- Optional: Save initial setup to Firestore ---
+                // This helps track initiated interviews even if not completed.
+                // We use a placeholder ID 'temp' for navigation if saving fails.
+                let interviewDocId = 'temp-' + Date.now(); // Placeholder ID
+                try {
+                   const interviewsColRef = collection(db, 'users', usr.uid, 'interviews'); // Collection for setup info
+                   const docRef = await addDoc(interviewsColRef, {
+                      company: fData.co, // Use full names consistent with display
+                      role: fData.role,
+                      level: fData.lvl,
+                      interviewType: fData.iType,
+                      preferredLanguage: fData.lang || null,
+                      ultravoxCallId: data.callId,
+                      status: 'initiated', // Mark as initiated
+                      createdAt: serverTimestamp()
+                   });
+                   interviewDocId = docRef.id; // Get the actual ID
+                   console.log("Interview setup saved with ID:", interviewDocId);
+                } catch (dbError) {
+                   console.error("Error saving interview setup to Firestore:", dbError);
+                   toast.warn("Could not save interview setup details.");
+                   // Use the placeholder ID for navigation if saving fails
+                }
+                // --- End Optional Firestore Save ---
+
+                // Navigate to the interview page with joinUrl and pass details/ID in state
+                // Use the actual or placeholder Firestore doc ID as the interviewId in the URL
+                nav(`/interviewPage/${interviewDocId}?joinUrl=${encodeURIComponent(data.joinUrl)}`, {
+                  state: {
+                     // Pass details needed by InterviewPage (matching its ref structure)
+                     interviewDetails: {
+                         company: fData.co, // Use full names
+                         role: fData.role,
+                         level: fData.lvl,
+                         interviewType: fData.iType // Pass type if needed
+                     },
+                     interviewId: interviewDocId // Pass the Firestore ID (actual or placeholder)
+                  }
+                });
+
+                // Reset form after successful navigation setup
+                setFData({ co: "", role: "", lvl: "", iType: "behavioral", lang: "", notifyPref: "email" });
+                // Optionally refresh history immediately, though it might not show the new one yet
+                // fetchHistory(usr.uid);
+
+            } else {
+                throw new Error('Join URL not received from server.'); // Handle case where joinUrl is missing
             }
-
-            // 3. Update Firestore document with call details
-            await updateDoc(doc(db, "interviews", docRef.id), {
-                ultravoxCallId: uvRes.callId,
-                joinUrl: uvRes.joinUrl,
-                status: "ready",
-                updatedAt: serverTimestamp()
-            });
-
-            setOk(true);
-            setFData({ co: "", role: "", lvl: "", iType: "technical", lang: "", notifyPref: "email" });
-            fetchHistory(usr.uid); // Refresh history
 
         } catch (e) {
-            console.error("Error creating interview:", e);
-            setErr(e.message);
-            // Optional: Update Firestore status to 'failed' if doc was created
-            if (docRefId) {
-                try {
-                    await updateDoc(doc(db, "interviews", docRefId), {
-                        status: "failed",
-                        error: e.message,
-                        updatedAt: serverTimestamp()
-                    });
-                } catch (updateError) {
-                    console.error("Failed to update interview status to failed:", updateError);
-                }
+            console.error("Error in handleSubmit:", e);
+            // Error state (err) and toast are likely set within the try block's error handling
+            if (!err) { // Set a generic error if none was set before
+               const errorMsg = `Failed to start interview: ${e.message}`;
+               setErr(errorMsg);
+               toast.error(errorMsg);
             }
+            // Removed Firestore status update to 'failed' here for simplicity,
+            // backend errors are handled above.
         } finally {
-            setLoading(false);
+            setLoading(false); // Ensure loading is turned off
         }
     };
 
+    // Format Firestore timestamp for display
     const formatDate = (ts) => {
         if (!ts || !ts.toDate) return 'N/A';
-        return ts.toDate().toLocaleString();
+        try {
+            return ts.toDate().toLocaleString(); // Format date and time
+        } catch (e) {
+            console.error("Error formatting date:", e, ts);
+            return "Invalid Date";
+        }
     }
 
+    // --- JSX Structure (Matches Old Version) ---
     return (
         <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-50 px-4 py-8">
             <div className="max-w-7xl mx-auto">
                 {/* Header Section */}
-                <div className="bg-white rounded-2xl shadow-lg p-8 mb-8">
-                    <div className="flex justify-between items-center">
+                <div className="bg-white rounded-2xl shadow-lg p-6 md:p-8 mb-8">
+                    <div className="flex flex-col sm:flex-row justify-between items-center">
                         <div>
-                            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                                Welcome back, {usr?.displayName || "Guest"}!
+                            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
+                                Welcome back, {usr?.displayName || usr?.email || "User"}!
                             </h1>
                             <p className="text-gray-600">
-                                Ready for your next mock interview? 
+                                Ready for your next mock interview?
                             </p>
                         </div>
+                        {/* Optional: Add Logout button or link to profile */}
+                        {/* <button onClick={logOut} className="...">Logout</button> */}
                     </div>
                 </div>
 
                 {/* Notifications */}
                 {ok && (
-                    <div className="mb-6 bg-green-50 border-l-4 border-green-500 p-4 rounded-lg">
-                        <p className="text-green-700 font-medium">Interview created successfully! Your AI interviewer is ready.</p>
+                    <div className="mb-6 bg-green-50 border-l-4 border-green-500 p-4 rounded-lg shadow">
+                        <p className="text-green-700 font-medium">Interview created successfully! Navigate to the Interview page when ready.</p>
                     </div>
                 )}
-
                 {err && (
-                    <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
+                    <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-lg shadow">
                         <p className="text-red-700 font-medium">Error: {err}</p>
                     </div>
                 )}
 
                 <div className="grid lg:grid-cols-2 gap-8">
                     {/* Interview Form */}
-                    <div className="bg-white rounded-2xl shadow-lg p-8">
+                    <div className="bg-white rounded-2xl shadow-lg p-6 md:p-8">
                         <div className="flex items-center gap-3 mb-6">
                             <Briefcase className="text-purple-600" size={24} />
-                            <h2 className="text-2xl font-semibold text-gray-900">Schedule Interview</h2>
+                            <h2 className="text-xl md:text-2xl font-semibold text-gray-900">Schedule Interview</h2>
                         </div>
 
-                        <form onSubmit={handleSubmit} className="space-y-6">
-                            <div className="grid md:grid-cols-2 gap-6">
+                        <form onSubmit={handleSubmit} className="space-y-5">
+                            {/* Company & Role */}
+                            <div className="grid sm:grid-cols-2 gap-5">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
+                                    <label htmlFor="co" className="block text-sm font-medium text-gray-700 mb-1">Company *</label>
                                     <input
                                         type="text"
+                                        id="co" // Match label htmlFor
                                         name="co"
                                         value={fData.co}
                                         onChange={handleChange}
@@ -218,11 +288,11 @@ function Dashboard() {
                                         required
                                     />
                                 </div>
-
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                                    <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
                                     <input
                                         type="text"
+                                        id="role" // Match label htmlFor
                                         name="role"
                                         value={fData.role}
                                         onChange={handleChange}
@@ -233,48 +303,57 @@ function Dashboard() {
                                 </div>
                             </div>
 
-                            <div className="grid md:grid-cols-2 gap-6">
+                            {/* Level & Type */}
+                            <div className="grid sm:grid-cols-2 gap-5">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Level</label>
+                                    <label htmlFor="lvl" className="block text-sm font-medium text-gray-700 mb-1">Level *</label>
                                     <select
+                                        id="lvl" // Match label htmlFor
                                         name="lvl"
                                         value={fData.lvl}
                                         onChange={handleChange}
-                                        className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                        className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all bg-white" // Added bg-white for consistency
                                         required
                                     >
-                                        <option value="">Select Level</option>
+                                        <option value="" disabled>Select Level</option> {/* Added disabled default */}
                                         <option value="Internship">Internship</option>
                                         <option value="Entry-Level">Entry-Level</option>
+                                        <option value="Junior">Junior</option> {/* Added Junior */}
                                         <option value="Mid-Level">Mid-Level</option>
-                                        <option value="Senior-Level">Senior-Level</option>
+                                        <option value="Senior">Senior</option> {/* Changed from Senior-Level */}
+                                        <option value="Staff">Staff</option> {/* Added Staff */}
+                                        <option value="Principal">Principal</option> {/* Added Principal */}
+                                        <option value="Manager">Manager</option> {/* Added Manager */}
+                                        <option value="Director">Director</option> {/* Added Director */}
                                     </select>
                                 </div>
-
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Interview Type</label>
+                                    <label htmlFor="iType" className="block text-sm font-medium text-gray-700 mb-1">Interview Type *</label>
                                     <select
+                                        id="iType" // Match label htmlFor
                                         name="iType"
                                         value={fData.iType}
                                         onChange={handleChange}
-                                        className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                        className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all bg-white" // Added bg-white
                                         required
                                     >
-                                        <option value="technical">Technical</option>
                                         <option value="behavioral">Behavioral</option>
+                                        <option value="technical">Technical (General)</option>
+                                        <option value="coding">Coding Challenge</option>
                                         <option value="system-design">System Design</option>
-                                        <option value="coding">Coding</option>
                                     </select>
                                 </div>
                             </div>
 
+                            {/* Language */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Programming Language</label>
+                                <label htmlFor="lang" className="block text-sm font-medium text-gray-700 mb-1">Programming Language (Optional)</label>
                                 <select
+                                    id="lang" // Match label htmlFor
                                     name="lang"
                                     value={fData.lang}
                                     onChange={handleChange}
-                                    className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                    className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all bg-white" // Added bg-white
                                 >
                                     <option value="">Select Language (Optional)</option>
                                     <option value="JavaScript">JavaScript</option>
@@ -284,48 +363,21 @@ function Dashboard() {
                                     <option value="C#">C#</option>
                                     <option value="Go">Go</option>
                                     <option value="Ruby">Ruby</option>
+                                    {/* Add other languages if needed */}
                                 </select>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Notification Preference</label>
-                                <div className="flex gap-6">
-                                    <label className="flex items-center gap-2 cursor-pointer">
-                                        <input
-                                            type="radio"
-                                            name="notifyPref"
-                                            value="email"
-                                            checked={fData.notifyPref === "email"}
-                                            onChange={handleChange}
-                                            className="w-4 h-4 text-purple-600 focus:ring-purple-500"
-                                        />
-                                        <span className="text-gray-700">Email</span>
-                                    </label>
-                                    <label className="flex items-center gap-2 cursor-pointer">
-                                        <input
-                                            type="radio"
-                                            name="notifyPref"
-                                            value="sms"
-                                            checked={fData.notifyPref === "sms"}
-                                            onChange={handleChange}
-                                            className="w-4 h-4 text-purple-600 focus:ring-purple-500"
-                                        />
-                                        <span className="text-gray-700">SMS</span>
-                                    </label>
-                                </div>
-                            </div>
+                            {/* Removed Notification Preference Section */}
 
+                            {/* Submit Button */}
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className={`w-full ${loading ? 'bg-purple-400' : 'bg-purple-600 hover:bg-purple-700'} text-white py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2`}
+                                className={`w-full ${loading ? 'bg-purple-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700'} text-white py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 shadow hover:shadow-md`}
                             >
                                 {loading ? (
                                     <>
-                                        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
+                                        <Loader2 className="animate-spin h-5 w-5" /> {/* Using lucide spinner */}
                                         Creating Interview...
                                     </>
                                 ) : "Schedule Interview"}
@@ -334,78 +386,62 @@ function Dashboard() {
                     </div>
 
                     {/* Interview History */}
-                    <div className="bg-white rounded-2xl shadow-lg p-8">
+                    <div className="bg-white rounded-2xl shadow-lg p-6 md:p-8">
                         <div className="flex items-center gap-3 mb-6">
                             <Clock className="text-purple-600" size={24} />
-                            <h2 className="text-2xl font-semibold text-gray-900">Interview History</h2>
+                            <h2 className="text-xl md:text-2xl font-semibold text-gray-900">Interview History</h2>
                         </div>
 
                         {histLoading ? (
                             <div className="flex items-center justify-center h-64">
-                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
+                                <Loader2 className="animate-spin h-8 w-8 text-purple-600" /> {/* Using lucide spinner */}
                             </div>
                         ) : interviews.length > 0 ? (
                             <div className="overflow-x-auto">
-                                <table className="w-full">
-                                    <thead>
-                                        <tr className="border-b border-gray-200">
-                                            <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Company</th>
-                                            <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Role</th>
-                                            <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Status</th>
-                                            <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Action</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {interviews.map(i => (
-                                            <tr key={i.id} className="border-b border-gray-100 hover:bg-gray-50">
-                                                <td className="py-3 px-4">
-                                                    <div className="font-medium text-gray-900">{i.company}</div>
-                                                    <div className="text-sm text-gray-500">{formatDate(i.createdAt)}</div>
-                                                </td>
-                                                <td className="py-3 px-4">
-                                                    <div className="text-gray-900">{i.role}</div>
-                                                    <div className="text-sm text-gray-500">{i.level}</div>
-                                                </td>
-                                                <td className="py-3 px-4">
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${i.status === 'ready' ? 'bg-green-100 text-green-800' :
-                                                            i.status === 'completed' ? 'bg-blue-100 text-blue-800' :
-                                                                i.status === 'scheduling' ? 'bg-yellow-100 text-yellow-800' :
-                                                                    i.status === 'failed' ? 'bg-red-100 text-red-800' :
-                                                                        'bg-gray-100 text-gray-800'
-                                                        }`}>
-                                                        {i.status.charAt(0).toUpperCase() + i.status.slice(1)}
-                                                    </span>
-                                                </td>
-                                                <td className="py-3 px-4">
-                                                    {i.status === 'ready' && i.joinUrl && (
-                                                        <button
-                                                            onClick={() => nav(`/interviewPage?joinUrl=${encodeURIComponent(i.joinUrl)}`)}
-                                                            className="text-purple-600 hover:text-purple-800 font-medium text-sm"
-                                                        >
-                                                            Join Now
-                                                        </button>
-                                                    )}
-                                                    {i.status === 'completed' && (
-                                                        <button className="text-gray-400 cursor-not-allowed font-medium text-sm">
-                                                            Review
-                                                        </button>
-                                                    )}
-                                                    {i.status === 'failed' && (
-                                                        <span className="text-red-600 text-sm">Failed</span>
-                                                    )}
-                                                    {i.status === 'scheduling' && (
-                                                        <span className="text-yellow-600 text-sm">Scheduling...</span>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                {/* Using a simpler list format instead of table for better responsiveness */}
+                                <ul className="space-y-4">
+                                    {interviews.map(i => (
+                                        <li key={i.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                                           <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-2">
+                                                <div className="mb-2 sm:mb-0">
+                                                    <p className="font-semibold text-gray-900">{i.role || 'N/A Role'} at {i.company || i.co || 'N/A Company'}</p>
+                                                    <p className="text-sm text-gray-500">{i.level || 'N/A Level'} - {i.interviewType || i.iType || 'N/A Type'}</p>
+                                                </div>
+                                                {/* Display status based on interviewResults data */}
+                                                {/* Status logic might need adjustment based on exact data structure */}
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                                    // Assuming 'scores' exist in completed results
+                                                    i.scores ? 'bg-blue-100 text-blue-800' :
+                                                    // If no scores, assume it might be just initiated or failed
+                                                    i.status === 'failed' ? 'bg-red-100 text-red-800' :
+                                                    'bg-gray-100 text-gray-800' // Default/Unknown status
+                                                }`}>
+                                                    {i.scores ? 'Completed' : (i.status === 'failed' ? 'Failed' : 'Unknown')}
+                                                </span>
+                                           </div>
+                                           <div className="flex flex-col sm:flex-row justify-between sm:items-center text-sm">
+                                                <p className="text-gray-500 mb-2 sm:mb-0">
+                                                    Date: {formatDate(i.createdAt)}
+                                                </p>
+                                                {/* Link to view results */}
+                                                {i.scores && ( // Only show 'View Results' if analysis/scores exist
+                                                    <Link
+                                                        to={`/interview/${i.id}/results`} // Navigate to results page using the result ID
+                                                        className="text-purple-600 hover:text-purple-800 font-medium"
+                                                    >
+                                                        View Results
+                                                    </Link>
+                                                )}
+                                                {/* Removed Join Now button as history shows completed/failed interviews */}
+                                           </div>
+                                        </li>
+                                    ))}
+                                </ul>
                             </div>
                         ) : (
                             <div className="text-center py-12">
-                                <p className="text-gray-500">No interviews scheduled yet.</p>
-                                <p className="text-sm text-gray-400 mt-1">Create your first interview to get started!</p>
+                                <p className="text-gray-500">No completed interview results found.</p>
+                                <p className="text-sm text-gray-400 mt-1">Schedule an interview to see your history here!</p>
                             </div>
                         )}
                     </div>
