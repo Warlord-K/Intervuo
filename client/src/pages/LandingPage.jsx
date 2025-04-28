@@ -46,7 +46,7 @@ function LandingPage() {
       {/* Features Section */}
       <section className="bg-white py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl font-bold text-center mb-12">Why Choose CrackItAI?</h2>
+          <h2 className="text-3xl font-bold text-center mb-12">Why Choose Intervuo?</h2>
           <div className="grid md:grid-cols-3 gap-8">
             <FeatureCard
               icon={<Code2 className="w-6 h-6 text-purple-700" />}
@@ -84,7 +84,7 @@ function LandingPage() {
       <section className="bg-purple-700 py-20">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl font-bold text-white mb-6">Ready to Ace Your Next Interview?</h2>
-          <p className="text-purple-100 mb-8">Join thousands of developers who have improved their interview skills with CrackItAI</p>
+          <p className="text-purple-100 mb-8">Join thousands of developers who have improved their interview skills with Intervuo</p>
           <button className="bg-white text-purple-700 px-8 py-3 rounded-lg hover:bg-purple-50 transition">
             Get Started Free
           </button>
@@ -117,9 +117,3 @@ function Step({ number, title, description }) {
 }
 
 export default LandingPage;
-
-
-
-
-
-

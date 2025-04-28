@@ -26,3 +26,5 @@ src/config/firebaseConfig.js
 *.njsproj
 *.sln
 *.sw?
+
+*firebase*

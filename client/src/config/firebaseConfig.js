@@ -3,7 +3,7 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyACdgNHTsK4xZwBmgsdFS8ji-Hh7gYDIhI",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: "crackitai.firebaseapp.com",
   projectId: "crackitai",
   storageBucket: "crackitai.firebasestorage.app",

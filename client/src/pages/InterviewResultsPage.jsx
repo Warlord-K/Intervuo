@@ -1,41 +1,130 @@
-import React from 'react';
-import { useLocation, Link } from 'react-router-dom';
-import { CheckCircle, XCircle, Star, TrendingUp, TrendingDown, MessageSquare, BookOpen, Activity, BarChart3, BrainCircuit, ClipboardList } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useLocation, useParams, Link } from 'react-router-dom';
+import { auth, db } from '../config/firebaseConfig';
+import { doc, getDoc } from 'firebase/firestore';
+import { FaTimesCircle, FaFileAlt, FaComments, FaStar } from 'react-icons/fa';
+import { ClipLoader } from 'react-spinners'; // Using a spinner
 
-const ScoreStars = ({ score }) => {
-  if (score === null || score === undefined || score < 1) {
-    return <span className="text-sm text-gray-500 italic">N/A</span>;
-  }
-  const filledStars = Math.round(score / 2); 
-  const totalStars = 5;
-  return (
-    <div className="flex items-center">
-      {[...Array(totalStars)].map((_, i) => (
-        <Star
-          key={i}
-          className={`h-5 w-5 ${i < filledStars ? 'text-yellow-400 fill-current' : 'text-gray-300'}`}
-        />
-      ))}
-      <span className="ml-2 text-sm font-medium text-gray-700">({score}/10)</span>
-    </div>
-  );
-};
-
-
-export default function InterviewResultsPage() {
+const InterviewResultsPage = () => {
   const location = useLocation();
-  const { analysis, transcript, interviewDetails, error } = location.state || {};
+  const { interviewId } = useParams(); // Get ID from URL parameter :interviewId
+  const [results, setResults] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  if (!transcript) {
+  // Attempt to get initial data from navigation state (if navigated from InterviewPage)
+  const initialData = location.state;
+
+  useEffect(() => {
+    // Function to fetch results from Firestore
+    const fetchResultsFromFirestore = async (userId) => {
+      setLoading(true);
+      setError(null);
+      console.log("Fetching from Firestore for ID:", interviewId);
+
+      if (!interviewId) {
+        setError('Missing interview ID in URL.');
+        setLoading(false);
+        return;
+      }
+
+      try {
+        // Construct the correct path using the userId and interviewId
+        const resultDocRef = doc(db, 'users', userId, 'interviewResults', interviewId);
+        const docSnap = await getDoc(resultDocRef);
+
+        if (docSnap.exists()) {
+          console.log("Fetched data from Firestore:", docSnap.data());
+          setResults(docSnap.data()); // Set the fetched data
+        } else {
+          console.log("No such document found in Firestore for ID:", interviewId);
+          setError('Could not find interview data in database.'); // More specific error
+        }
+      } catch (err) {
+        console.error("Error fetching interview results from Firestore:", err);
+        setError(`Error fetching results: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // Use onAuthStateChanged to ensure user is loaded before deciding how to get data
+    const unsubscribe = auth.onAuthStateChanged(user => {
+      if (user) {
+        console.log("Auth state confirmed (User ID):", user.uid);
+
+        // Check if valid data was passed via state (from InterviewPage)
+        if (initialData && initialData.analysis && !initialData.error) {
+          console.log("Using initial data from location state:", initialData);
+          setResults({
+              ...initialData.analysis, // Contains summary, analysis, scores
+              // Assuming transcript/details might be passed too
+              transcript: initialData.transcript,
+              company: initialData.interviewDetails?.company,
+              role: initialData.interviewDetails?.role,
+              level: initialData.interviewDetails?.level,
+              interviewType: initialData.interviewDetails?.interviewType
+          });
+          setLoading(false);
+        }
+        // Check if an error was passed via state
+        else if (initialData && initialData.error) {
+            console.log("Using error from location state:", initialData.error);
+            setError(initialData.error);
+            // Optionally set partial results if transcript/details were passed
+            setResults({
+                transcript: initialData.transcript,
+                company: initialData.interviewDetails?.company,
+                role: initialData.interviewDetails?.role,
+                level: initialData.interviewDetails?.level,
+                interviewType: initialData.interviewDetails?.interviewType
+            });
+            setLoading(false);
+        }
+        // Otherwise (no valid state or navigating directly), fetch from Firestore
+        else {
+          fetchResultsFromFirestore(user.uid);
+        }
+      } else {
+        console.log("Auth state changed to logged out while on results page.");
+        // Should be handled by routing, but set error/loading state appropriately
+        setError("User is not logged in.");
+        setLoading(false);
+        setResults(null); // Clear any previous results
+      }
+    });
+
+    // Cleanup the listener on component unmount
+    return () => unsubscribe();
+
+  }, [interviewId, initialData]); // Rerun effect if interviewId or initialData changes
+
+  // --- Render Logic (Loading, Error, Success) ---
+
+  // Loading State
+  if (loading) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-lg shadow-md text-center">
-          <XCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h1 className="text-xl font-semibold mb-2">Error Loading Results</h1>
-          <p className="text-gray-600 mb-4">Could not find interview data. Please go back to the dashboard.</p>
+      <div className="flex justify-center items-center min-h-[calc(100vh-200px)] bg-gray-100"> {/* Adjusted height */}
+        <div className="text-center">
+           <ClipLoader size={50} color={"#4f46e5"} loading={loading} />
+           <p className="text-lg font-medium text-gray-700 mt-4">Loading Results...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error State or No Results after loading
+  // Show error if error state is set OR if loading is done and results are still null
+  if (error || (!loading && !results)) {
+    return (
+      <div className="flex justify-center items-center min-h-[calc(100vh-200px)] bg-gray-100 px-4"> {/* Adjusted height and added padding */}
+        <div className="bg-white p-8 rounded-lg shadow-md text-center max-w-md w-full"> {/* Added w-full */}
+          <FaTimesCircle className="text-red-500 text-5xl mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">Error Loading Results</h1>
+          <p className="text-gray-600 mb-6">{error || 'Could not find interview data. Please go back to the dashboard.'}</p>
           <Link
             to="/dashboard"
-            className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition"
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-2 rounded-md transition duration-300 inline-block" // Added inline-block
           >
             Back to Dashboard
           </Link>
@@ -44,95 +133,98 @@ export default function InterviewResultsPage() {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-8 text-center">
-           <h1 className="text-3xl font-bold text-gray-900 mb-2">Interview Analysis</h1>
-           {interviewDetails && (
-                <p className="text-md text-gray-600">
-                    For {interviewDetails.role} at {interviewDetails.company} ({interviewDetails.level}, {interviewDetails.interviewType} type)
-                </p>
-           )}
+  // --- Success State - Display Results ---
+  // Helper function to render score stars
+  const renderStars = (score) => {
+    if (score === null || score === undefined || score === 'N/A') return <span className="text-gray-400 italic">N/A</span>;
+    // Ensure score is a number before rounding
+    const numericScore = Number(score);
+    if (isNaN(numericScore)) return <span className="text-gray-400 italic">Invalid</span>;
+
+    const filledStars = Math.round(numericScore / 2); // Assuming score is out of 10
+    const emptyStars = Math.max(0, 5 - filledStars); // Ensure emptyStars isn't negative
+    return (
+        <div className="flex items-center"> {/* Added items-center */}
+            {[...Array(filledStars)].map((_, i) => <FaStar key={`filled-${i}`} className="text-yellow-400" />)}
+            {[...Array(emptyStars)].map((_, i) => <FaStar key={`empty-${i}`} className="text-gray-300" />)}
+            <span className="ml-2 text-sm font-medium text-gray-700">({numericScore}/10)</span>
         </div>
+    );
+  };
 
-        <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8 mb-8">
-          <h2 className="flex items-center gap-2 text-2xl font-semibold text-gray-800 mb-6">
-            <BrainCircuit className="text-purple-600" /> AI Feedback
-          </h2>
+  return (
+    <div className="container mx-auto px-4 py-8 max-w-4xl">
+      <h1 className="text-3xl font-bold mb-6 text-center text-gray-800">Interview Results</h1>
 
-          {error && (
-            <div className="mb-6 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
-              <strong className="font-bold">Analysis Error:</strong>
-              <span className="block sm:inline ml-2">{error}</span>
-            </div>
-          )}
+      {/* Interview Context - Reads directly from results object */}
+      <div className="bg-indigo-50 p-4 rounded-lg mb-6 border border-indigo-200">
+          <h2 className="text-lg font-semibold text-indigo-800 mb-2">Interview Context</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
+              <p><span className="font-medium">Company:</span> {results.company || 'N/A'}</p>
+              <p><span className="font-medium">Role:</span> {results.role || 'N/A'}</p>
+              <p><span className="font-medium">Level:</span> {results.level || 'N/A'}</p>
+              <p><span className="font-medium">Type:</span> {results.interviewType || 'N/A'}</p>
+          </div>
+      </div>
 
-          {analysis ? (
-            <>
-              <div className="mb-6">
-                <h3 className="text-lg font-medium text-gray-700 mb-2 flex items-center gap-2">
-                  <ClipboardList className="h-5 w-5 text-gray-500"/> Summary
-                </h3>
-                <p className="text-gray-600 bg-gray-50 p-4 rounded-lg">{analysis.summary || "No summary provided."}</p>
-              </div>
+       {/* Summary */}
+       <div className="bg-white shadow-lg rounded-lg p-6 mb-6 border border-gray-200">
+            <h2 className="text-xl font-semibold text-gray-700 mb-3 flex items-center">
+                <FaFileAlt className="mr-2 text-blue-500" /> Summary
+            </h2>
+            <p className="text-gray-600 whitespace-pre-wrap">{results.summary || 'No summary available.'}</p> {/* Added whitespace-pre-wrap */}
+       </div>
 
-              {/* Strengths and Weaknesses */}
-              <div className="grid md:grid-cols-2 gap-6 mb-8">
-                <div>
-                  <h3 className="text-lg font-medium text-gray-700 mb-2 flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-green-500" /> Strengths
-                  </h3>
-                  <ul className="list-disc list-inside space-y-2 pl-2 text-gray-600">
-                    {analysis.analysis?.strengths?.length > 0 ? (
-                      analysis.analysis.strengths.map((item, index) => <li key={`strength-${index}`}>{item}</li>)
-                    ) : (
-                      <li className="italic text-gray-500">No specific strengths identified by AI.</li>
-                    )}
-                  </ul>
+       {/* Analysis */}
+       {results.analysis && (
+           <div className="bg-white shadow-lg rounded-lg p-6 mb-6 border border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-700 mb-4 flex items-center">
+                    <FaComments className="mr-2 text-green-500" /> Performance Analysis
+                </h2>
+                <div className="mb-4">
+                    <h3 className="text-lg font-medium text-gray-800 mb-2">Strengths:</h3>
+                    {results.analysis.strengths && results.analysis.strengths.length > 0 ? (
+                        <ul className="list-disc list-inside space-y-1 text-gray-600">
+                            {results.analysis.strengths.map((strength, index) => <li key={`strength-${index}`}>{strength}</li>)}
+                        </ul>
+                    ) : <p className="text-gray-500 italic">No specific strengths identified.</p>}
                 </div>
                 <div>
-                  <h3 className="text-lg font-medium text-gray-700 mb-2 flex items-center gap-2">
-                    <TrendingDown className="h-5 w-5 text-red-500" /> Areas for Improvement
-                  </h3>
-                  <ul className="list-disc list-inside space-y-2 pl-2 text-gray-600">
-                    {analysis.analysis?.areas_for_improvement?.length > 0 ? (
-                      analysis.analysis.areas_for_improvement.map((item, index) => <li key={`weakness-${index}`}>{item}</li>)
-                    ) : (
-                      <li className="italic text-gray-500">No specific areas for improvement identified by AI.</li>
-                    )}
-                  </ul>
+                    <h3 className="text-lg font-medium text-gray-800 mb-2">Areas for Improvement:</h3>
+                    {results.analysis.areas_for_improvement && results.analysis.areas_for_improvement.length > 0 ? (
+                        <ul className="list-disc list-inside space-y-1 text-gray-600">
+                            {results.analysis.areas_for_improvement.map((area, index) => <li key={`area-${index}`}>{area}</li>)}
+                        </ul>
+                    ) : <p className="text-gray-500 italic">No specific areas for improvement identified.</p>}
                 </div>
-              </div>
+           </div>
+       )}
 
-              <div>
-                <h3 className="text-lg font-medium text-gray-700 mb-4 flex items-center gap-2">
-                    <BarChart3 className="h-5 w-5 text-gray-500"/> Performance Metrics
-                </h3>
-                <div className="space-y-3">
-                    {analysis.scores && Object.entries(analysis.scores).map(([metric, score]) => (
-                         <div key={metric} className="flex justify-between items-center bg-gray-50 px-4 py-2 rounded">
-                            <span className="text-sm font-medium capitalize text-gray-800">{metric.replace('_', ' ')}</span>
-                            <ScoreStars score={score} />
+       {/* Scores */}
+       {results.scores && (
+            <div className="bg-white shadow-lg rounded-lg p-6 mb-6 border border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-700 mb-4 flex items-center">
+                    <FaStar className="mr-2 text-yellow-500" /> Score Breakdown
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                    {Object.entries(results.scores).map(([key, value]) => (
+                        <div key={key} className="flex flex-col sm:flex-row justify-between sm:items-center border-b pb-2">
+                            <span className="text-gray-700 capitalize mb-1 sm:mb-0">{key.replace(/_/g, ' ')}:</span> {/* Replaced underscore */}
+                            {renderStars(value)}
                         </div>
                     ))}
-                     {!analysis.scores && <p className="italic text-gray-500">No scores provided.</p>}
                 </div>
-              </div>
-            </>
-          ) : (
-            !error && <p className="text-center text-gray-500 italic">AI analysis is not available for this interview.</p>
-          )}
-        </div>
+            </div>
+       )}
 
 
-        <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8">
-          <h2 className="flex items-center gap-2 text-2xl font-semibold text-gray-800 mb-4">
-            <BookOpen className="text-purple-600"/> Full Transcript
-          </h2>
-          <div className="bg-gray-100 p-4 rounded-lg max-h-96 overflow-y-auto space-y-2">
-            {transcript.map((t, index) => (
-              <p key={index} className="text-sm text-gray-800">
+      {/* Optional: Display Transcript if available in results */}
+      {results.transcript && Array.isArray(results.transcript) && (
+        <div className="bg-white shadow-lg rounded-lg p-6 mb-6 border border-gray-200">
+          <h2 className="text-xl font-semibold text-gray-700 mb-3">Full Transcript</h2>
+          <div className="bg-gray-100 p-3 rounded h-64 overflow-y-auto text-sm space-y-2">
+            {results.transcript.map((t, index) => (
+              <p key={index}>
                 <span className={`font-semibold ${t.speaker === 'agent' ? 'text-purple-700' : 'text-blue-700'}`}>
                   {t.speaker === 'agent' ? 'Interviewer' : 'You'}:
                 </span>{' '}
@@ -141,17 +233,19 @@ export default function InterviewResultsPage() {
             ))}
           </div>
         </div>
+      )}
 
-         <div className="mt-8 text-center">
-            <Link
-                to="/dashboard"
-                className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition"
-            >
-                Back to Dashboard
-            </Link>
-         </div>
-
+      {/* Back to Dashboard Button */}
+      <div className="text-center mt-8">
+        <Link
+          to="/dashboard"
+          className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-2 rounded-md transition duration-300 inline-block" // Added inline-block
+        >
+          Back to Dashboard
+        </Link>
       </div>
     </div>
   );
-}
+};
+
+export default InterviewResultsPage;

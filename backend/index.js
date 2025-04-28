@@ -1,23 +1,17 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv"; // Keep for other env vars if needed
+import dotenv from "dotenv";
 import fetch from 'node-fetch';
 import { Groq } from 'groq-sdk';
 import admin from 'firebase-admin';
 import { createRequire } from 'module'; // Import createRequire
 
-dotenv.config(); // Load other environment variables
-
-// --- Firebase Admin Initialization using createRequire ---
-const require = createRequire(import.meta.url); // Create a require function relative to this module
+dotenv.config(); 
+const require = createRequire(import.meta.url); 
 let serviceAccount;
 try {
-    // Load the JSON file using the created require function
-    // Ensure the path is correct relative to index.js (assuming it's in the same directory)
-    serviceAccount = require('./crackitai-firebase-adminsdk-fbsvc-8690e2c5a2.json');
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
     console.log("Successfully loaded service account JSON from file.");
-
-    // Basic check for essential keys after loading
     if (!serviceAccount.project_id || !serviceAccount.private_key || !serviceAccount.client_email) {
         throw new Error("Loaded service account JSON is missing essential keys (project_id, private_key, client_email). Check file content.");
     }
@@ -30,7 +24,6 @@ try {
 
 
 try {
-    // Initialize Firebase Admin with the loaded service account object
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount)
     });
@@ -40,7 +33,6 @@ try {
     process.exit(1);
 }
 const db = admin.firestore();
-// --- End Firebase Admin Initialization ---
 
 
 const app = express();
@@ -108,7 +100,7 @@ const getUserApiKeys = async (uid) => {
 const createPrompt = (iData) => {
     const { co, role, lvl, iType, lang } = iData;
     let p = `You are an AI interviewer representing ${co} for a ${lvl} ${role} position. `;
-    switch (iType) {
+    switch (iType) { /* ... prompt logic ... */
         case "technical":
             p += `This is a technical interview. `;
             if (lang) p += `Preferred language: ${lang}. `;
@@ -149,15 +141,12 @@ app.post('/api/start-interview', authenticateToken, async (req, res) => {
         }
     } catch (error) {
         console.error(`Error in /api/start-interview while fetching keys for UID ${uid}:`, error.message);
-        // Check if the error is the specific UNAUTHENTICATED one from Admin SDK/Firestore
         if (error.code === 16 || (error.message && error.message.includes('UNAUTHENTICATED'))) {
             return res.status(500).json({ error: 'Backend authentication error contacting Firestore. Service account key might be invalid or lack permissions.' });
         }
-        // Handle other errors like profile not found
         if (error.message.includes('User profile not found')) {
              return res.status(404).json({ error: error.message });
         }
-        // Generic error for other issues
         return res.status(500).json({ error: 'Failed to retrieve API keys.', details: error.message });
     }
 
@@ -237,24 +226,32 @@ app.post('/api/analyze-transcript', authenticateToken, async (req, res) => {
         }
     } catch (error) {
         console.error(`Error in /api/analyze-transcript while fetching keys for UID ${uid}:`, error.message);
-        // Check if the error is the specific UNAUTHENTICATED one from Admin SDK/Firestore
         if (error.code === 16 || (error.message && error.message.includes('UNAUTHENTICATED'))) {
              return res.status(500).json({ error: 'Backend authentication error contacting Firestore. Service account key might be invalid or lack permissions.' });
         }
-        // Handle other errors like profile not found
         if (error.message.includes('User profile not found')) {
              return res.status(404).json({ error: error.message });
         }
-        // Generic error for other issues
         return res.status(500).json({ error: 'Failed to retrieve API keys.', details: error.message });
     }
 
     const groq = new Groq({ apiKey: userGroqKey });
 
-    const { transcript, interviewDetails, interviewId } = req.body;
+    // Destructure expected data from request body
+    const { transcript, interviewDetails, interviewId } = req.body; // transcript is the array of transcript objects
+
+    // Validate required data
     if (!transcript || !Array.isArray(transcript) || transcript.length === 0) {
         return res.status(400).json({ error: 'Valid transcript data is required.' });
     }
+    if (!interviewId) {
+        console.error(`Missing interviewId in request body for UID ${uid}`);
+        return res.status(400).json({ error: 'Missing interviewId in request.' });
+    }
+     if (!interviewDetails) {
+        console.warn(`Missing interviewDetails in request body for UID ${uid}`);
+    }
+
 
     const formattedTranscript = transcript
         .map(t => `${t.speaker === 'agent' ? 'Interviewer' : 'Candidate'}: ${t.text}`)
@@ -299,6 +296,8 @@ app.post('/api/analyze-transcript', authenticateToken, async (req, res) => {
         Ensure the output is valid JSON. Do not include any text outside the JSON object.
     `; // Keep original analysis prompt
 
+    let analysisResult; // Declare analysisResult outside the try block
+
     try {
         console.log(`Sending request to Groq for UID ${uid}...`);
         const chatCompletion = await groq.chat.completions.create({
@@ -306,7 +305,7 @@ app.post('/api/analyze-transcript', authenticateToken, async (req, res) => {
                 { role: "system", content: "You are an expert interview analyst. Analyze the provided transcript and return ONLY a valid JSON object with the requested summary, analysis, and scores, based strictly on the transcript content." },
                 { role: "user", content: analysisPrompt }
             ],
-            model: "llama3-70b-8192", // Updated model potentially
+            model: "llama3-70b-8192",
             temperature: 0.3,
             max_tokens: 1500,
             top_p: 1,
@@ -315,7 +314,8 @@ app.post('/api/analyze-transcript', authenticateToken, async (req, res) => {
         });
         const analysisResultString = chatCompletion.choices[0]?.message?.content;
         if (!analysisResultString) throw new Error("Groq API returned an empty response.");
-        let analysisResult;
+
+        // Keep original robust JSON parsing
         try {
              analysisResult = JSON.parse(analysisResultString);
         } catch (parseError) {
@@ -333,7 +333,32 @@ app.post('/api/analyze-transcript', authenticateToken, async (req, res) => {
                  throw new Error("Groq response was not valid JSON. Raw response: " + analysisResultString);
              }
         }
+
+        // *** ADDED: Save analysis result AND TRANSCRIPT to Firestore ***
+        try {
+            const resultDocRef = db.collection('users').doc(uid).collection('interviewResults').doc(interviewId);
+            await resultDocRef.set({
+                ...analysisResult, // Save summary, analysis, scores
+                // Add context from interviewDetails (use original field names if needed by frontend history)
+                company: interviewDetails?.company || null,
+                role: interviewDetails?.role || null,
+                level: interviewDetails?.level || null,
+                interviewType: interviewDetails?.interviewType || null,
+                // *** Store the original transcript array ***
+                transcript: transcript, // Save the array received from the frontend
+                // Add timestamp
+                createdAt: admin.firestore.FieldValue.serverTimestamp() // Use server timestamp
+            });
+            console.log(`Successfully saved analysis result and transcript to Firestore for interview ID: ${interviewId}`);
+        } catch (dbError) {
+            console.error(`Error saving analysis result/transcript to Firestore for interview ID ${interviewId}:`, dbError);
+            // Don't fail the whole request, but log the error. The user still gets the analysis back.
+        }
+        // *** END: Save analysis result ***
+
+        // Send the analysis result back to the frontend
         res.json(analysisResult);
+
     } catch (error) {
         console.error(`Error analyzing transcript with Groq for UID ${uid}:`, error);
          if (error.status === 401 || error.status === 403) {
