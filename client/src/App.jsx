@@ -1,33 +1,21 @@
 import React, { useState, useEffect } from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate, Link, Outlet } from "react-router-dom";
-import { initializeApp } from "firebase/app";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
-import { ToastContainer } from 'react-toastify'; 
+import { BrowserRouter as Router, Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
+import { onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-import firebaseConfig from "./config/firebaseConfig"; 
+import { auth, db } from "./config/firebaseConfig";
 import LandingPage from "./pages/LandingPage";
 import Dashboard from "./pages/DashBoard";
 import SignInPage from "./pages/SignInPage";
 import RegisterPage from "./pages/RegisterPage";
-import Layout from "./pages/Layout"; 
+import Layout from "./pages/Layout";
 import InterviewPage from "./pages/InterviewPage";
 import InterviewResultsPage from "./pages/InterviewResultsPage";
 import ProfilePage from "./pages/ProfilePage";
+import { Link } from "react-router-dom"; // For NotFoundPage
 
-let firebaseApp;
-try {
-    const authInstance = getAuth(); 
-    firebaseApp = authInstance.app;
-} catch (e) {
-    try {
-       firebaseApp = initializeApp(firebaseConfig);
-       console.log("Firebase initialized in App.jsx catch block.");
-    } catch (initError){
-       console.error("Firebase initialization error in App.jsx:", initError);
-    }
-}
-const auth = getAuth(firebaseApp);
 const AppLayout = () => (
   <Layout>
     <Outlet />
@@ -35,70 +23,109 @@ const AppLayout = () => (
 );
 
 function App() {
-  const [authStatus, setAuthStatus] = useState(null); 
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [profileKeysStatus, setProfileKeysStatus] = useState({ loading: true, keysSet: false });
+  const location = useLocation();
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      console.log("Auth state changed:", user ? `Logged in (${user.uid})` : "Logged out");
-      setAuthStatus(user ? true : false); 
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setCurrentUser(user);
+        setProfileKeysStatus({ loading: true, keysSet: false });
+        const userDocRef = doc(db, 'users', user.uid);
+        try {
+          const docSnap = await getDoc(userDocRef);
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (data.ultravoxApiKey && data.groqApiKey) {
+              setProfileKeysStatus({ loading: false, keysSet: true });
+            } else {
+              setProfileKeysStatus({ loading: false, keysSet: false });
+            }
+          } else {
+            setProfileKeysStatus({ loading: false, keysSet: false });
+          }
+        } catch (error) {
+          console.error("Error fetching user data for key check:", error);
+          setProfileKeysStatus({ loading: false, keysSet: false });
+        }
+      } else {
+        setCurrentUser(null);
+        setProfileKeysStatus({ loading: true, keysSet: false });
+      }
+      setAuthLoading(false);
     });
     return () => unsubscribe();
   }, []);
-  if (authStatus === null) {
+
+  if (authLoading || (currentUser && profileKeysStatus.loading)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <p className="text-gray-600 text-lg">Loading Authentication...</p>
+        <p className="text-gray-600 text-lg">Loading Application...</p>
       </div>
     );
   }
 
+  if (currentUser && !profileKeysStatus.keysSet && location.pathname !== '/profile' && location.pathname !== '/signin' && location.pathname !== '/register') {
+    return <Navigate to="/profile" replace />;
+  }
+
   return (
-    <Router>
+    <>
       <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover />
       <Routes>
-        <Route element={<AppLayout />}> 
-          <Route index element={<LandingPage />} /> 
-          <Route path="/landingPage" element={<Navigate to="/" replace />} /> 
+        <Route element={<AppLayout />}>
+          <Route index element={<LandingPage />} />
+          <Route path="/landingPage" element={<Navigate to="/" replace />} />
           <Route
             path="/dashboard"
-            element={authStatus ? <Dashboard /> : <Navigate to="/signin" replace state={{ from: '/dashboard' }} />}
+            element={currentUser ? <Dashboard /> : <Navigate to="/signin" replace state={{ from: '/dashboard' }} />}
           />
           <Route
-            path="/interviewPage/:interviewId" 
-            element={authStatus ? <InterviewPage /> : <Navigate to="/signin" replace state={{ from: location.pathname }} />}
+            path="/interviewPage/:interviewId"
+            element={currentUser ? <InterviewPage /> : <Navigate to="/signin" replace state={{ from: location.pathname }} />}
           />
-           <Route
-            path="/interview/:interviewId/results" 
-            element={authStatus ? <InterviewResultsPage /> : <Navigate to="/signin" replace state={{ from: location.pathname }} />}
+          <Route
+            path="/interview/:interviewId/results"
+            element={currentUser ? <InterviewResultsPage /> : <Navigate to="/signin" replace state={{ from: location.pathname }} />}
           />
           <Route
             path="/profile"
-            element={authStatus ? <ProfilePage /> : <Navigate to="/signin" replace state={{ from: '/profile' }} />}
+            element={currentUser ? <ProfilePage /> : <Navigate to="/signin" replace state={{ from: '/profile' }} />}
           />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
         <Route
           path="/signin"
-          element={!authStatus ? <SignInPage /> : <Navigate to="/dashboard" replace />}
+          element={!currentUser ? <SignInPage /> : <Navigate to={profileKeysStatus.loading ? "/" : (profileKeysStatus.keysSet ? "/dashboard" : "/profile")} replace />}
         />
         <Route
           path="/register"
-          element={!authStatus ? <RegisterPage /> : <Navigate to="/dashboard" replace />}
+          element={!currentUser ? <RegisterPage /> : <Navigate to="/profile" replace />}
         />
-
       </Routes>
-    </Router>
+    </>
   );
 }
+
 function NotFoundPage() {
     return (
-        <div className="text-center py-10 px-4">
-            <h1 className="text-3xl font-bold text-gray-800">404 - Not Found</h1>
-            <p className="mt-2 text-gray-600">Sorry, the page you are looking for does not exist.</p>
-            <Link to="/" className="text-indigo-600 hover:underline mt-4 inline-block">
+        <div className="text-center py-10 px-4 min-h-screen flex flex-col justify-center items-center bg-gray-100">
+            <h1 className="text-4xl font-bold text-slate-800">404</h1>
+            <p className="mt-3 text-xl text-slate-600">Oops! Page Not Found.</p>
+            <p className="mt-2 text-md text-slate-500">Sorry, the page you are looking for does not exist or has been moved.</p>
+            <Link to={auth.currentUser ? ( (profileKeysStatus.loading || !profileKeysStatus.keysSet) ? "/profile" : "/dashboard") : "/"} className="mt-6 px-6 py-3 bg-sky-600 text-white font-semibold rounded-lg shadow-md hover:bg-sky-700 transition-colors duration-150">
               Return Home
             </Link>
         </div>
     );
 }
 
-export default App;
+const AppWrapper = () => (
+  <Router>
+    <App />
+  </Router>
+);
+
+export default AppWrapper;
