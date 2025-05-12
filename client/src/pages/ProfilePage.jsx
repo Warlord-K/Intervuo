@@ -163,7 +163,7 @@ function ProfilePage() {
                                 onChange={(e) => setUltravoxApiKey(e.target.value)}
                             />
                              <a
-                                href="YOUR_ULTRAVOX_KEY_GENERATION_LINK" // Replace with actual link
+                                href="https://app.ultravox.ai/settings/"
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-sky-600 hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 whitespace-nowrap"
@@ -196,7 +196,7 @@ function ProfilePage() {
                                 onChange={(e) => setGroqApiKey(e.target.value)}
                             />
                             <a
-                                href="YOUR_GROQ_KEY_GENERATION_LINK" // Replace with actual link
+                                href="https://console.groq.com/keys" 
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-sky-600 hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 whitespace-nowrap"
