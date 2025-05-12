@@ -277,18 +277,18 @@ function Dashboard() {
                                 <div>
                                     <label htmlFor="iType" className="block text-sm font-medium text-gray-700 mb-1">Interview Type *</label>
                                     <select
-                                        id="iType" // Match label htmlFor
+                                        id="iType"
                                         name="iType"
                                         value={fData.iType}
                                         onChange={handleChange}
-                                        className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all bg-white" // Added bg-white
+                                        className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all bg-white"
                                         required
                                     >
+                                        <option value="role_specific">Knowledge & Skills</option>
                                         <option value="behavioral">Behavioral & Situational</option>
                                         <option value="technical">Technical (General)</option>
                                         <option value="system-design">System Design</option>
                                         <option value="case_study">Case Study & Problem Solving</option>
-                                        <option value="role_specific">Knowledge & Skills</option>
                                         <option value="cultural_fit">Cultural Fit Assessment</option>
                                     </select>
                                 </div>
